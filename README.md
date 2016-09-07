@@ -51,6 +51,12 @@ Example:
 Two output files will be generated. Firstone, a csv file with stats regarding unique positions per file and shared positions with same and different methylation values.
 And finally a barplot will be generated as png image file.
 
+You can use -r (relaxed comparison) to relax the window location comparison. Then a reported CG can be compared with a C from other source.
+         
+    |CG|    |C|
+     |       |
+    |C|     |CG|
+
 ------
 Author
 ------
