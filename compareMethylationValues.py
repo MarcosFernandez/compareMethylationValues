@@ -66,17 +66,21 @@ def compareMethValues(methValueFirst=0,methValueSecond=0):
     return False
 
 #5. COMPARE WINDOWS
-def compareWindows(arrayWindowFirst=None,arrayWindowSecond=None,previousContig=""):
+def compareWindows(arrayWindowFirst=None,arrayWindowSecond=None,previousContig="",relaxedCompare=False):
     '''
     Compare two given windows by each location. Return 0 if both are equal, 1 if the firstone is smaller otherwise 2.
     If one of the contigs are different from the previous one then the one which is like the previous contig name is considered as smaller.
     arrayWindowFirst - Array of fields for the first window.
     arrayWindowSecond - Array of fields for the second window.
     previousContig - Previous contig name
+    relaxedCompare - Compares if a position in a second windows is within first window ranges
     return 0 windows have the same location, 1 First window is smaller than secondone, 3 Second window is smaller than the firstone
     '''
     if arrayWindowFirst[0] == arrayWindowSecond[0]:
         if arrayWindowFirst[1] == arrayWindowSecond[1] and arrayWindowFirst[2] == arrayWindowSecond[2]:
+            return 0
+        elif relaxedCompare == True and \
+             ((arrayWindowFirst[1] <= arrayWindowSecond[1] and arrayWindowSecond[2] <= arrayWindowFirst[2]) or (arrayWindowFirst[1] >= arrayWindowSecond[1] and arrayWindowSecond[2] >= arrayWindowFirst[2]) ): 
             return 0
         elif arrayWindowFirst[1] < arrayWindowSecond[1] and arrayWindowFirst[2] < arrayWindowSecond[2]:
             return 1
@@ -196,6 +200,7 @@ input_group.add_argument('--first', dest="first", metavar="FILE", help='First Be
 input_group.add_argument('--second', dest="second", metavar="FILE", help='Second Bedgraph file.')
 input_group.add_argument('--first-label', dest="first_label", metavar="NAME", help='First label.')
 input_group.add_argument('--second-label', dest="second_label", metavar="NAME", help='Second label.')
+input_group.add_argument('-r',dest="relaxed", action='store_true', help='Relaxed Location Comparison.To check windowd positions in second file located within windows in first file.', default=False)
 
 #1.2 Ouput
 output_group = parser.add_argument_group('Output')
@@ -262,7 +267,7 @@ while len(windowFirst) == 4 or len(windowSecond) == 4:
                 previousChromosome = windowSecond[0]
 
         #3.2.2 Comparing windows
-        compare = compareWindows(arrayWindowFirst=windowFirst,arrayWindowSecond=windowSecond,previousContig=previousChromosome)
+        compare = compareWindows(arrayWindowFirst=windowFirst,arrayWindowSecond=windowSecond,previousContig=previousChromosome,relaxedCompare=args.relaxed)
   
         if compare == 0:
             #3.2.2.1 Windows are equal location
@@ -336,4 +341,28 @@ with open(args.csv , 'w') as csvFile:
 #5. Close files descriptors
 fileFirst.close()
 fileSecond.close()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
