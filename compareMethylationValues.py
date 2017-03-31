@@ -24,13 +24,13 @@ def getReads(fileDescriptor=None):
 #2. GET WINDOW
 def getWindow(lineRead=None):
     '''
-    Split lineRead in fields, chromosome Name, start, end, methylation value
+    Split lineRead in fields, chromosome Name, start, end, methylation value,windowMatched
     return list of fields
     lineRead - array of window fields
     '''
     tmpList = lineRead.rstrip().split('\t')
     if len(tmpList) == 4:
-        return [tmpList[0],int(tmpList[1]),int(tmpList[2]),float(tmpList[3])]
+        return [tmpList[0],int(tmpList[1]),int(tmpList[2]),float(tmpList[3]),False]
     return tmpList
 
 #3. GET METHYLATION RANGE
@@ -74,15 +74,28 @@ def compareWindows(arrayWindowFirst=None,arrayWindowSecond=None,previousContig="
     arrayWindowSecond - Array of fields for the second window.
     previousContig - Previous contig name
     relaxedCompare - Compares if a position in a second windows is within first window ranges
-    return 0 windows have the same location, 1 First window is smaller than secondone, 3 Second window is smaller than the firstone
+    return 0 windows have the same location, 1 First window is smaller than secondone, 2 Second window is smaller than the firstone, 11 First includes second, 12 Second Includes First
     '''
     if arrayWindowFirst[0] == arrayWindowSecond[0]:
         if arrayWindowFirst[1] == arrayWindowSecond[1] and arrayWindowFirst[2] == arrayWindowSecond[2]:
+            arrayWindowFirst[4] = True
+            arrayWindowSecond[4] = True
             return 0
-        elif relaxedCompare == True and \
-             ((arrayWindowFirst[1] <= arrayWindowSecond[1] and arrayWindowSecond[2] <= arrayWindowFirst[2]) or (arrayWindowFirst[1] >= arrayWindowSecond[1] and arrayWindowSecond[2] >= arrayWindowFirst[2]) ): 
-            return 0
-        elif arrayWindowFirst[1] < arrayWindowSecond[1] and arrayWindowFirst[2] < arrayWindowSecond[2]:
+        elif relaxedCompare == True:
+            if arrayWindowFirst[1] == (arrayWindowSecond[1] + 1) and arrayWindowFirst[2] == (arrayWindowSecond[2] + 1):
+                arrayWindowFirst[4] = True
+                arrayWindowSecond[4] = True
+                return 0 
+            elif ( (arrayWindowFirst[1] <= arrayWindowSecond[1] and arrayWindowSecond[2] <= arrayWindowFirst[2]) or
+                  (arrayWindowFirst[1] <= (arrayWindowSecond[1] + 1) and (arrayWindowSecond[2] + 1) <= arrayWindowFirst[2]) ):
+                arrayWindowFirst[4] = True 
+                return 11
+            elif ( (arrayWindowFirst[1] >= arrayWindowSecond[1] and arrayWindowSecond[2]  >= arrayWindowFirst[2]) or
+                 (arrayWindowFirst[1] >= (arrayWindowSecond[1] + 1) and (arrayWindowSecond[2] + 1) >= arrayWindowFirst[2]) ): 
+                arrayWindowSecond[4] = True
+                return 12
+        
+        if arrayWindowFirst[1] < arrayWindowSecond[1] and arrayWindowFirst[2] < arrayWindowSecond[2]:
             return 1
         elif arrayWindowFirst[1] > arrayWindowSecond[1] and arrayWindowFirst[2] > arrayWindowSecond[2]:
             return 2
@@ -187,6 +200,12 @@ def plotsStats(statsUniqueFirst,statsUniqueSecond,statsShared,different,label_fi
     pylab.savefig(outpng)
 
 
+#8. Add windows Unique for a given bed file
+def addUniqueBedFile(bedFile,window):
+    with open(bedFile , 'a') as bedFile:
+        bedFile.write("%s\t%i\t%i\t%.2f\n" %( window[0],window[1],window[2],window[3]))
+
+
 ###################################################
 #              ARGUMENTS PARSING                  #
 ###################################################
@@ -207,8 +226,20 @@ output_group = parser.add_argument_group('Output')
 output_group.add_argument('--png', dest="png", metavar="FILE", help='Ouput PNG file.')
 output_group.add_argument('--csv', dest="csv", metavar="FILE", help='Ouput CSV file.')
 
+#Optional
+output_group.add_argument('--outFirstUnique', dest="out_first_unique", metavar="FILE", help='Ouput first unique file.')
+output_group.add_argument('--outSecondUnique', dest="out_second_unique", metavar="FILE", help='Ouput second unique file.')
+
+
 #1.3. Argument parsing
 args = parser.parse_args()
+
+#1.4. Reset Unique bed files
+if args.out_first_unique:
+    open(args.out_first_unique, 'w').close()
+
+if args.out_second_unique:
+    open(args.out_second_unique, 'w').close()
 
 ###################################################
 #              RUN COMPARISON                     #
@@ -240,18 +271,18 @@ windowSecond = []
 windowFirst = getWindow(getReads(fileFirst))
 windowSecond = getWindow(getReads(fileSecond))
 
-while len(windowFirst) == 4 or len(windowSecond) == 4:
+while len(windowFirst) == 5 or len(windowSecond) == 5:
     #3.1 Check if some of files has reached the end
-    if len(windowFirst) < 4 and len(windowSecond) == 4:
+    if len(windowFirst) < 5 and len(windowSecond) == 5:
         flagReadFirst = False
         flagReadSecond = True
         uniqueCGsecondUnmethylated, uniqueCGsecondUndefined, uniqueCGsecondMethylated = computeCounters(windowSecond[3],uniqueCGsecondUnmethylated,uniqueCGsecondUndefined,uniqueCGsecondMethylated)
-    elif len(windowFirst) == 4 and len(windowSecond) < 4:
+    elif len(windowFirst) == 5 and len(windowSecond) < 5:
         flagReadFirst = True
         flagReadSecond = False
         uniqueCGfirstUnmethylated, uniqueCGfirstUndefined,uniqueCGfirstMethylated = computeCounters(windowFirst[3],uniqueCGfirstUnmethylated,uniqueCGfirstUndefined,uniqueCGfirstMethylated)
     #3.2 Both files have a window to be checked
-    elif len(windowFirst) == 4 and len(windowSecond) == 4:
+    elif len(windowFirst) == 5 and len(windowSecond) == 5:
         #3.2.1 Update previous chromosome
         if previousChromosome == "":
             if windowFirst[0] < windowSecond[0]:
@@ -269,7 +300,7 @@ while len(windowFirst) == 4 or len(windowSecond) == 4:
         #3.2.2 Comparing windows
         compare = compareWindows(arrayWindowFirst=windowFirst,arrayWindowSecond=windowSecond,previousContig=previousChromosome,relaxedCompare=args.relaxed)
   
-        if compare == 0:
+        if compare == 0 or compare == 11 or compare == 12:
             #3.2.2.1 Windows are equal location
             if (compareMethValues(methValueFirst=windowFirst[3],methValueSecond=windowSecond[3])):
                 #3.2.2.1.1 Windows have equal methylation value
@@ -278,18 +309,40 @@ while len(windowFirst) == 4 or len(windowSecond) == 4:
                 #3.2.2.1.2 Windows have different methylation value
                 differentCGmethValues = differentCGmethValues + 1
        
-            flagReadFirst = True
-            flagReadSecond = True
+            if compare == 0:
+                flagReadFirst = True
+                flagReadSecond = True
+            elif compare == 11:
+                #First Window Includes Second than just get new second window
+                flagReadFirst = False
+                flagReadSecond = True
+            elif compare == 12:
+                #Second Window Includes First than just get new first window
+                flagReadFirst = True
+                flagReadSecond = False
         elif compare == 1:
             #3.2.2.2 First window is smaller than second
-            uniqueCGfirstUnmethylated, uniqueCGfirstUndefined,uniqueCGfirstMethylated = computeCounters(windowFirst[3],uniqueCGfirstUnmethylated,uniqueCGfirstUndefined,uniqueCGfirstMethylated)
+            if not windowFirst[4]:
+                uniqueCGfirstUnmethylated, uniqueCGfirstUndefined,uniqueCGfirstMethylated = computeCounters(windowFirst[3],uniqueCGfirstUnmethylated,uniqueCGfirstUndefined,uniqueCGfirstMethylated)
+
             flagReadFirst = True
             flagReadSecond = False
+
+            if args.out_first_unique:
+                if not windowFirst[4]:
+                    addUniqueBedFile(args.out_first_unique,windowFirst)
+
         elif compare == 2:
             #3.2.2.3 Second window is smaller than first
-            uniqueCGsecondUnmethylated, uniqueCGsecondUndefined, uniqueCGsecondMethylated = computeCounters(windowSecond[3],uniqueCGsecondUnmethylated,uniqueCGsecondUndefined,uniqueCGsecondMethylated)
+            if not windowSecond[4]:
+                uniqueCGsecondUnmethylated, uniqueCGsecondUndefined, uniqueCGsecondMethylated = computeCounters(windowSecond[3],uniqueCGsecondUnmethylated,uniqueCGsecondUndefined,uniqueCGsecondMethylated)
+
             flagReadFirst = False
             flagReadSecond = True
+
+            if args.out_second_unique:
+                if not windowSecond[4]:
+                    addUniqueBedFile(args.out_second_unique,windowSecond)
 
     #3.3 Perform new read calls
     if flagReadFirst:
